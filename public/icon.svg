@@ -1,0 +1,7 @@
+<svg width="192" height="192" viewBox="0 0 192 192" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="192" height="192" rx="24" fill="#2563eb"/>
+  <path d="M48 96L96 48L144 96L96 144L48 96Z" fill="#ffffff" opacity="0.9"/>
+  <circle cx="96" cy="96" r="24" fill="#ffffff"/>
+  <path d="M72 72L120 120M120 72L72 120" stroke="#2563eb" stroke-width="3" stroke-linecap="round"/>
+  <text x="96" y="170" text-anchor="middle" fill="#ffffff" font-family="system-ui" font-size="16" font-weight="600">SourceHound</text>
+</svg>
