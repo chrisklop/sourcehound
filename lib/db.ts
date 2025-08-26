@@ -45,6 +45,11 @@ redis.on('disconnect', () => {
 
 // Database utilities
 export async function healthCheck() {
+  // Skip database checks if no DATABASE_URL is configured (e.g., Vercel build)
+  if (!process.env.DATABASE_URL) {
+    return { postgres: false, redis: false, reason: 'No database configured' }
+  }
+
   try {
     // Test PostgreSQL connection
     await db.$queryRaw`SELECT 1`

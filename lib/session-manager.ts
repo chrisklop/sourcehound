@@ -306,6 +306,18 @@ export class SessionManager {
 
   // Analytics and management
   async getSessionStats(): Promise<any> {
+    // Skip database stats if no DATABASE_URL configured
+    if (!process.env.DATABASE_URL) {
+      return {
+        totalUsers: 0,
+        totalSessions: 0,
+        totalConversations: 0,
+        totalMessages: 0,
+        activeSessionsLast24h: 0,
+        status: 'Database not configured'
+      }
+    }
+
     try {
       const [userCount, sessionCount, conversationCount, messageCount] = await Promise.all([
         db.user.count(),
@@ -331,7 +343,15 @@ export class SessionManager {
       }
     } catch (error) {
       console.error('Session stats error:', error)
-      return null
+      return {
+        totalUsers: 0,
+        totalSessions: 0,
+        totalConversations: 0,
+        totalMessages: 0,
+        activeSessionsLast24h: 0,
+        status: 'Database unavailable',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }
     }
   }
 
