@@ -20,6 +20,8 @@ export class Cache {
   }
 
   async get<T>(key: string, options: CacheOptions = {}): Promise<T | null> {
+    if (!redis) return null
+    
     try {
       const fullKey = this.getKey(key, options.prefix)
       const value = await redis.get(fullKey)
@@ -39,6 +41,8 @@ export class Cache {
   }
 
   async set<T>(key: string, value: T, options: CacheOptions = {}): Promise<boolean> {
+    if (!redis) return false
+    
     try {
       const fullKey = this.getKey(key, options.prefix)
       const ttl = options.ttl || DEFAULT_TTL
@@ -58,6 +62,8 @@ export class Cache {
   }
 
   async del(key: string, options: CacheOptions = {}): Promise<boolean> {
+    if (!redis) return false
+    
     try {
       const fullKey = this.getKey(key, options.prefix)
       const result = await redis.del(fullKey)
@@ -69,6 +75,8 @@ export class Cache {
   }
 
   async exists(key: string, options: CacheOptions = {}): Promise<boolean> {
+    if (!redis) return false
+    
     try {
       const fullKey = this.getKey(key, options.prefix)
       const result = await redis.exists(fullKey)
@@ -92,6 +100,8 @@ export class Cache {
 
   // Similar query matching for fact-checks
   async findSimilarFactCheck(query: string, threshold = 0.8): Promise<any | null> {
+    if (!redis) return null
+    
     try {
       // Get all fact-check keys
       const pattern = this.getKey('*', 'factcheck')
@@ -150,6 +160,8 @@ export class Cache {
 
   // Bulk operations
   async clearByPattern(pattern: string): Promise<number> {
+    if (!redis) return 0
+    
     try {
       const keys = await redis.keys(`${DEFAULT_PREFIX}:${pattern}`)
       if (keys.length === 0) return 0
@@ -163,6 +175,10 @@ export class Cache {
   }
 
   async getStats(): Promise<any> {
+    if (!redis) {
+      return { connected: false, reason: 'Redis not configured' }
+    }
+    
     try {
       const info = await redis.info('memory')
       const keyCount = await redis.dbsize()
