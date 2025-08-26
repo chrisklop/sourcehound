@@ -156,33 +156,16 @@ async function runGeminiEngine(query: string, sessionId: string) {
   try {
     console.log("[Hybrid] Starting Gemini engine...")
     
+    // Check if API key is available
+    if (!process.env.GEMINI_API_KEY) {
+      throw new Error("GEMINI_API_KEY environment variable not found")
+    }
+    
+    console.log("[Hybrid] Gemini API key found, initializing model...")
+    
+    // Simplified Gemini model without function calling for better compatibility
     const geminiPro = genAI.getGenerativeModel({
-      model: "gemini-1.5-pro-latest",
-      tools: [
-        {
-          functionDeclarations: [
-            {
-              name: "google_search",
-              description: "Search Google for the latest and most relevant information.",
-              parameters: {
-                type: SchemaType.OBJECT,
-                properties: {
-                  query: {
-                    type: SchemaType.STRING,
-                    description: "The search query.",
-                  },
-                },
-                required: ["query"],
-              },
-            },
-          ],
-        },
-      ],
-      toolConfig: {
-        functionCallingConfig: {
-          mode: FunctionCallingMode.AUTO,
-        },
-      },
+      model: "gemini-1.5-pro",
     })
 
     const systemPrompt = `You are a world-class fact-checking expert. Conduct a thorough investigation into the user's query using Google Search.
@@ -212,7 +195,7 @@ async function runGeminiEngine(query: string, sessionId: string) {
     }`
 
     const chat = genAI.getGenerativeModel({ 
-      model: "gemini-1.5-pro-latest", 
+      model: "gemini-1.5-pro", 
       systemInstruction: systemPrompt 
     })
     
