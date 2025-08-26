@@ -3,7 +3,7 @@ import { Redis } from 'ioredis'
 
 declare global {
   var prisma: PrismaClient | undefined
-  var redis: Redis | undefined
+  var redis: Redis | null | undefined
 }
 
 // Prisma Client (PostgreSQL)
