@@ -3,7 +3,7 @@ import { Redis } from 'ioredis'
 
 declare global {
   var prisma: PrismaClient | undefined
-  var redis: Redis | null | undefined
+  var redis: Redis | undefined
 }
 
 // Prisma Client (PostgreSQL)
@@ -15,37 +15,39 @@ if (process.env.NODE_ENV !== 'production') {
   globalThis.prisma = db
 }
 
-// Redis Client - only connect if REDIS_URL is available
-export const redis = process.env.REDIS_URL 
-  ? (globalThis.redis ?? new Redis(
-      process.env.REDIS_URL,
-      {
-        maxRetriesPerRequest: 3,
-        lazyConnect: true,
-        connectTimeout: 5000,
-        commandTimeout: 5000,
-      }
-    ))
-  : null
+// Redis Client (Redis Cloud via Vercel)
+export const redis = globalThis.redis ?? new Redis(
+  process.env.REDIS_URL || 'redis://localhost:6379',
+  {
+    maxRetriesPerRequest: 3,
+    lazyConnect: true,
+    connectTimeout: 10000,
+    commandTimeout: 10000,
+    retryDelayOnFailover: 100,
+    enableAutoPipelining: true,
+  }
+)
 
 if (process.env.NODE_ENV !== 'production') {
   globalThis.redis = redis
 }
 
-// Redis connection handlers - only if Redis is available
-if (redis) {
-  redis.on('connect', () => {
-    console.log('✅ Redis connected')
-  })
+// Redis connection handlers
+redis.on('connect', () => {
+  console.log('✅ Redis connected to Redis Cloud')
+})
 
-  redis.on('error', (error) => {
-    console.error('❌ Redis connection error:', error)
-  })
+redis.on('error', (error) => {
+  console.error('❌ Redis connection error:', error)
+})
 
-  redis.on('disconnect', () => {
-    console.log('⚠️ Redis disconnected')
-  })
-}
+redis.on('disconnect', () => {
+  console.log('⚠️ Redis disconnected')
+})
+
+redis.on('ready', () => {
+  console.log('🚀 Redis ready for connections')
+})
 
 // Database utilities
 export async function healthCheck() {
@@ -55,18 +57,23 @@ export async function healthCheck() {
   }
 
   try {
-    // Test PostgreSQL connection
-    await db.$queryRaw`SELECT 1`
+    // Test PostgreSQL connection (skip if no DATABASE_URL)
+    let postgresOk = false
+    if (process.env.DATABASE_URL) {
+      await db.$queryRaw`SELECT 1`
+      postgresOk = true
+    }
     
-    // Test Redis connection only if available
-    const redisOk = redis ? await redis.ping().then(() => true).catch(() => false) : false
+    // Test Redis connection
+    await redis.ping()
     
-    return { postgres: true, redis: redisOk }
+    return { postgres: postgresOk, redis: true }
   } catch (error) {
     console.error('Database health check failed:', error)
     
-    const postgresOk = await db.$queryRaw`SELECT 1`.then(() => true).catch(() => false)
-    const redisOk = redis ? await redis.ping().then(() => true).catch(() => false) : false
+    const postgresOk = process.env.DATABASE_URL ? 
+      await db.$queryRaw`SELECT 1`.then(() => true).catch(() => false) : false
+    const redisOk = await redis.ping().then(() => true).catch(() => false)
     
     return { postgres: postgresOk, redis: redisOk }
   }
