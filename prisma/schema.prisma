@@ -1,0 +1,110 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String?  @unique
+  name      String?
+  avatar    String?
+  ipAddress String?  @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  conversations Conversation[]
+  sessions      Session[]
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String?
+  ipAddress String
+  data      Json
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model Conversation {
+  id        String   @id @default(cuid())
+  title     String
+  userId    String?
+  ipAddress String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  messages Message[]
+  user     User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("conversations")
+}
+
+model Message {
+  id             String   @id @default(cuid())
+  conversationId String
+  role           String
+  content        String
+  sources        Json?
+  factCheckData  Json?
+  isLoading      Boolean  @default(false)
+  timestamp      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@map("messages")
+}
+
+model FactCheckCache {
+  id          String   @id @default(cuid())
+  queryHash   String   @unique
+  query       String
+  result      Json
+  similarity  Float?
+  hitCount    Int      @default(1)
+  lastHit     DateTime @default(now())
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+
+  @@map("fact_check_cache")
+}
+
+model SourceCredibility {
+  id              String   @id @default(cuid())
+  domain          String   @unique
+  credibilityData Json
+  lastUpdated     DateTime @default(now())
+
+  @@map("source_credibility")
+}
+
+model QueryLog {
+  id            String   @id @default(cuid())
+  query         String
+  ipAddress     String
+  userAgent     String?
+  success       Boolean
+  processingTime Int?
+  resultType    String?
+  sourceCount   Int?
+  metadata      Json?
+  timestamp     DateTime @default(now())
+
+  @@map("query_logs")
+}

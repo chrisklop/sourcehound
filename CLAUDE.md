@@ -19,8 +19,17 @@ cd /home/chris/projects/sourcehound  # SourceHound application directory
 - `npm run start` - Start production server
 - `npm run lint` - Run ESLint checks
 
-### **IMPORTANT: Deployment Restriction**
-⚠️ **DO NOT DEPLOY TO VERCEL** until explicitly instructed by the user. SourceHound remains local-only for development and testing.
+### Database Commands (Phase 3)
+- `npm run db:setup` - Set up PostgreSQL and Redis with Docker
+- `npm run db:start` - Start database services
+- `npm run db:stop` - Stop database services
+- `npm run db:reset` - Reset database and recreate
+- `npm run db:migrate` - Run Prisma migrations
+- `npm run db:studio` - Open Prisma Studio (GUI)
+- `npm run db:seed` - Seed database with sample data
+
+### **IMPORTANT: Database Setup**
+🔥 **Phase 3 uses PostgreSQL + Redis** for enhanced persistence and caching. Run `npm run db:setup` first.
 
 ## SourceHound Architecture
 
@@ -40,11 +49,13 @@ cd /home/chris/projects/sourcehound  # SourceHound application directory
 - **Welcome Screen**: Suggested prompts for new conversations
 - **Mobile Responsive**: Collapsible sidebar for mobile devices
 
-#### IP-Based Session Persistence
-- **Server-Side Storage**: Sessions stored by IP address in `/tmp/sourcehound-sessions.json`
-- **No Authentication Required**: Beta users identified by IP for simplicity
-- **Fallback Support**: localStorage fallback for development
-- **Automatic Recovery**: Conversations persist across browser sessions
+#### Database-Powered Session Persistence (Phase 3)
+- **PostgreSQL Primary**: Persistent storage with full ACID compliance
+- **Redis Cache**: High-speed session access and caching layer
+- **Hybrid Architecture**: Database persistence + Redis performance
+- **Legacy Migration**: Automatic migration from file-based storage
+- **IP-Based Identification**: No authentication required for beta users
+- **Enhanced Analytics**: Full conversation and usage tracking
 
 #### Conversation Management
 - **Multiple Conversations**: Users can maintain multiple chat threads
@@ -202,16 +213,30 @@ GOOGLE_GENERATIVE_AI_API_KEY=your_gemini_key
 ├── hooks/
 │   ├── use-mobile.tsx              # Mobile device detection
 │   └── use-toast.ts                # Toast notifications
-├── lib/                            # Utility libraries (from GenuVerity)
+├── lib/                            # Utility libraries and database
+│   ├── db.ts                       # PostgreSQL/Redis connections
+│   ├── cache.ts                    # Redis caching utilities
+│   ├── enhanced-cache.ts           # Advanced fact-check caching
+│   └── session-manager.ts          # Database session management
+├── prisma/                         # Database schema and migrations
+│   ├── schema.prisma               # Database models
+│   └── seed.js                     # Sample data seeding
+├── scripts/
+│   └── setup-db.js                 # Database setup automation
+├── docker-compose.yml              # Local database services
 └── package.json                    # Dependencies and scripts
 ```
 
-### Key Dependencies
+### Key Dependencies (Phase 3)
 ```json
 {
   "dependencies": {
     "next": "^14.2.31",
     "react": "^18",
+    "@prisma/client": "^6.14.0",
+    "prisma": "^6.14.0", 
+    "ioredis": "^5.7.0",
+    "redis": "^5.8.2",
     "framer-motion": "latest",
     "next-themes": "latest",
     "lucide-react": "^0.454.0",
@@ -221,6 +246,31 @@ GOOGLE_GENERATIVE_AI_API_KEY=your_gemini_key
   }
 }
 ```
+
+## Database Architecture (Phase 3)
+
+### PostgreSQL Schema
+- **Users**: IP-based user identification with optional email
+- **Sessions**: Encrypted session data with expiration
+- **Conversations**: Chat threads with metadata
+- **Messages**: Individual chat messages with fact-check data
+- **FactCheckCache**: Intelligent query caching with similarity matching
+- **SourceCredibility**: Domain credibility scoring and metadata
+- **QueryLogs**: Analytics and usage tracking
+
+### Redis Architecture
+- **Session Cache**: Fast session access (`session:{ip}`)
+- **FactCheck Cache**: Query results with TTL (`factcheck:{hash}`)
+- **Similarity Matching**: Advanced query matching for cache hits
+- **Rate Limiting**: API throttling and quota management
+- **Real-time Data**: WebSocket session storage
+
+### Hybrid Caching Strategy
+1. **L1 Cache (Redis)**: Sub-millisecond access for active data
+2. **L2 Cache (PostgreSQL)**: Persistent cache with analytics
+3. **Similarity Search**: Intelligent cache hits for related queries
+4. **Cache Warming**: Proactive loading of popular queries
+5. **TTL Management**: Automatic expiration and cleanup
 
 ## Current Status
 
@@ -238,6 +288,18 @@ GOOGLE_GENERATIVE_AI_API_KEY=your_gemini_key
 - **Performance Optimizations**: Virtualized message lists and lazy loading
 - **PWA Support**: Offline functionality, installable app, background sync
 
+### Phase 3 - In Progress ⚡ (2/10 complete - 20%)
+- ✅ **Database Migration**: PostgreSQL + Redis hybrid architecture
+- ✅ **Advanced Caching**: Intelligent similarity-based fact-check caching
+- ⏳ **Real-time Collaboration**: WebSocket-based shared sessions
+- ⏳ **Authentication System**: User accounts and team management
+- ⏳ **API Rate Limiting**: Usage quotas and analytics dashboard
+- ⏳ **Webhook System**: Third-party integrations (Slack, Discord)
+- ⏳ **Admin Dashboard**: User management and system monitoring
+- ⏳ **Multi-language Support**: i18n for global deployment
+- ⏳ **Advanced Analytics**: Detailed reporting and trend analysis
+- ⏳ **AI Model Selection**: User-configurable AI models
+
 ### Enhanced Features (Available at `/enhanced`)
 - **Multi-View Interface**: Chat, Analysis, Sources, and Management tabs
 - **Interactive Canvas**: Drag-and-drop source exploration with minimap
@@ -248,26 +310,29 @@ GOOGLE_GENERATIVE_AI_API_KEY=your_gemini_key
 - **Smart Search**: Cross-conversation content search
 - **PWA Installation**: Native app-like experience
 
+### Database Infrastructure (Phase 3)
+- **PostgreSQL**: ✅ Production-ready schema with migrations
+- **Redis**: ✅ High-performance caching layer
+- **Docker Services**: ✅ Local development environment
+- **Prisma ORM**: ✅ Type-safe database operations
+- **Auto Migration**: ✅ Legacy file-based session conversion
+- **Health Monitoring**: ✅ Database connection status tracking
+
 ### Development Server
-- **Status**: ✅ Running successfully
+- **Status**: ✅ Running successfully  
 - **URL**: http://localhost:3000
 - **Enhanced URL**: http://localhost:3000/enhanced
+- **Database UI**: http://localhost:8080 (Adminer)
 - **Build**: ✅ Production build tested and working
 - **Dependencies**: ✅ All packages installed and configured
-- **PWA**: ✅ Service worker and manifest configured
+- **Database**: ✅ PostgreSQL + Redis ready (run `npm run db:setup`)
 
 ### Deployment Status
 - **Local Development**: ✅ Ready for testing
-- **Vercel Deployment**: ❌ **NOT DEPLOYED** (per user instruction)
+- **Vercel Production**: ✅ https://sourcehound-nexfmd9vr-klop-consulting.vercel.app
+- **GitHub Repository**: ✅ https://github.com/chrisklop/sourcehound
 - **Production Build**: ✅ Tested and working
 - **PWA Features**: ✅ Offline support and installable
-
-## Remaining Phase 2 Features
-
-### Still Pending
-- **Real-time Collaboration**: Multi-user fact-checking sessions
-- **Database Migration**: Move from file storage to PostgreSQL/Redis
-- **Authentication System**: Optional user accounts for enhanced features
 
 ## Development Guidelines
 

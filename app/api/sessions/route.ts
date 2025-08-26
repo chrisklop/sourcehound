@@ -1,54 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { sessionManager } from '@/lib/session-manager'
+
+// Legacy file-based fallback for migration
 import fs from 'fs/promises'
 import path from 'path'
-import { headers } from 'next/headers'
 
 const SESSIONS_FILE = path.join('/tmp', 'sourcehound-sessions.json')
 
-interface Message {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  timestamp: string
-  isLoading?: boolean
-}
-
-interface Conversation {
-  id: string
-  title: string
-  messages: Message[]
-  createdAt: string
-  updatedAt: string
-}
-
-interface SessionData {
-  conversations: Conversation[]
-  lastAccessed: string
-}
-
-// Get client IP address
-function getClientIP(request: NextRequest): string {
-  const headersList = headers()
-  
-  // Check various headers for IP address
-  const xForwardedFor = headersList.get('x-forwarded-for')
-  const xRealIP = headersList.get('x-real-ip')
-  const cfConnectingIP = headersList.get('cf-connecting-ip')
-  
-  if (xForwardedFor) {
-    // x-forwarded-for can contain multiple IPs, take the first one
-    return xForwardedFor.split(',')[0].trim()
-  }
-  
-  if (xRealIP) return xRealIP
-  if (cfConnectingIP) return cfConnectingIP
-  
-  // Fallback to connection remote address
-  return request.ip || 'unknown'
-}
-
-// Load all sessions from file
-async function loadSessions(): Promise<Record<string, SessionData>> {
+// Legacy file operations for migration
+async function loadLegacySessions(): Promise<Record<string, any>> {
   try {
     const data = await fs.readFile(SESSIONS_FILE, 'utf-8')
     return JSON.parse(data)
@@ -57,30 +17,63 @@ async function loadSessions(): Promise<Record<string, SessionData>> {
   }
 }
 
-// Save all sessions to file
-async function saveSessions(sessions: Record<string, SessionData>): Promise<void> {
+async function migrateLegacySession(request: NextRequest): Promise<void> {
   try {
-    await fs.writeFile(SESSIONS_FILE, JSON.stringify(sessions, null, 2))
+    const legacySessions = await loadLegacySessions()
+    if (Object.keys(legacySessions).length === 0) return
+
+    // Get current IP
+    const forwardedFor = request.headers.get('x-forwarded-for')
+    const realIp = request.headers.get('x-real-ip')  
+    const cfConnectingIp = request.headers.get('cf-connecting-ip')
+    const ipAddress = forwardedFor?.split(',')[0].trim() || realIp || cfConnectingIp || '127.0.0.1'
+
+    // Check if this IP has legacy data
+    const legacyData = legacySessions[ipAddress]
+    if (legacyData) {
+      console.log(`Migrating legacy session for IP: ${ipAddress}`)
+      
+      // Convert to new format and save
+      await sessionManager.saveSession(request, {
+        conversations: legacyData.conversations.map((conv: any) => ({
+          ...conv,
+          createdAt: new Date(conv.createdAt),
+          updatedAt: new Date(conv.updatedAt),
+          messages: conv.messages.map((msg: any) => ({
+            ...msg,
+            timestamp: new Date(msg.timestamp)
+          }))
+        })),
+        lastAccessed: legacyData.lastAccessed || new Date().toISOString(),
+        metadata: {
+          migrated: true,
+          migratedAt: new Date().toISOString()
+        }
+      })
+      
+      // Remove from legacy storage
+      delete legacySessions[ipAddress]
+      await fs.writeFile(SESSIONS_FILE, JSON.stringify(legacySessions, null, 2))
+      
+      console.log(`Successfully migrated session for IP: ${ipAddress}`)
+    }
   } catch (error) {
-    console.error('Error saving sessions:', error)
+    console.error('Legacy migration error:', error)
   }
 }
 
 // GET /api/sessions - Load conversations for current IP
 export async function GET(request: NextRequest) {
   try {
-    const clientIP = getClientIP(request)
-    const sessions = await loadSessions()
-    const sessionData = sessions[clientIP] || { conversations: [], lastAccessed: new Date().toISOString() }
+    // Try to migrate legacy data first
+    await migrateLegacySession(request)
     
-    // Update last accessed time
-    sessionData.lastAccessed = new Date().toISOString()
-    sessions[clientIP] = sessionData
-    await saveSessions(sessions)
+    // Load session using new database system
+    const { data } = await sessionManager.getSession(request)
     
     return NextResponse.json({
       success: true,
-      conversations: sessionData.conversations
+      conversations: data.conversations
     })
   } catch (error) {
     console.error('Error loading session:', error)
@@ -91,10 +84,9 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/sessions - Save conversations for current IP
+// POST /api/sessions - Save conversations for current IP  
 export async function POST(request: NextRequest) {
   try {
-    const clientIP = getClientIP(request)
     const { conversations } = await request.json()
     
     if (!Array.isArray(conversations)) {
@@ -104,19 +96,24 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
     
-    const sessions = await loadSessions()
+    // Get current session to preserve metadata
+    const { data: currentSession } = await sessionManager.getSession(request)
     
-    sessions[clientIP] = {
+    // Update with new conversations
+    const success = await sessionManager.saveSession(request, {
       conversations,
-      lastAccessed: new Date().toISOString()
-    }
-    
-    await saveSessions(sessions)
-    
-    return NextResponse.json({
-      success: true,
-      message: 'Session saved successfully'
+      lastAccessed: new Date().toISOString(),
+      metadata: currentSession.metadata
     })
+    
+    if (success) {
+      return NextResponse.json({
+        success: true,
+        message: 'Session saved successfully'
+      })
+    } else {
+      throw new Error('Failed to save session')
+    }
   } catch (error) {
     console.error('Error saving session:', error)
     return NextResponse.json({
@@ -129,18 +126,16 @@ export async function POST(request: NextRequest) {
 // DELETE /api/sessions - Clear conversations for current IP
 export async function DELETE(request: NextRequest) {
   try {
-    const clientIP = getClientIP(request)
-    const sessions = await loadSessions()
+    const success = await sessionManager.deleteSession(request)
     
-    if (sessions[clientIP]) {
-      delete sessions[clientIP]
-      await saveSessions(sessions)
+    if (success) {
+      return NextResponse.json({
+        success: true,
+        message: 'Session cleared successfully'
+      })
+    } else {
+      throw new Error('Failed to clear session')
     }
-    
-    return NextResponse.json({
-      success: true,
-      message: 'Session cleared successfully'
-    })
   } catch (error) {
     console.error('Error clearing session:', error)
     return NextResponse.json({
