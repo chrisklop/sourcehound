@@ -35,8 +35,8 @@ export interface RouterConfig {
 }
 
 const DEFAULT_CONFIG: RouterConfig = {
-  maxSourcesPerAPI: 200, // UNLIMITED comprehensive research - get ALL sources!
-  timeoutMs: 30000, // Extended timeout for maximum source gathering
+  maxSourcesPerAPI: 300, // MAXIMUM comprehensive research - get ALL possible sources!
+  timeoutMs: 45000, // Extended timeout for exhaustive source gathering
   fallbackToGeneral: true,
   parallelExecution: true
 }
@@ -84,12 +84,26 @@ export async function intelligentSearch(
     console.log(`[IntelligentRouter] Adding OpenAlex for academic content`)
   }
   
-  // Add more sources for controversial topics that need comprehensive coverage
-  const controversialKeywords = ['vaccine', 'climate', 'election', 'autism', 'covid', 'mask', 'hydroxychloroquine']
-  if (controversialKeywords.some(keyword => query.toLowerCase().includes(keyword))) {
-    // Do additional Perplexity searches with different strategies
-    console.log(`[IntelligentRouter] Controversial topic detected - adding comprehensive source coverage`)
-    secondaryAPIs.push('perplexity-research', 'perplexity-expert')
+  // Add more sources for topics requiring comprehensive verification
+  const comprehensiveKeywords = [
+    'vaccine', 'climate', 'election', 'autism', 'covid', 'mask', 'hydroxychloroquine',
+    'conspiracy', 'government', 'health', 'medicine', 'science', 'research', 'study',
+    'evidence', 'proof', 'debunk', 'myth', 'fact', 'truth', 'lie', 'false', 'fake',
+    'claims', 'allegations', 'report', 'investigation'
+  ]
+  
+  const needsComprehensiveCoverage = comprehensiveKeywords.some(keyword => 
+    query.toLowerCase().includes(keyword)
+  )
+  
+  if (needsComprehensiveCoverage) {
+    console.log(`[IntelligentRouter] Comprehensive verification needed - expanding source coverage`)
+    secondaryAPIs.push('perplexity-research', 'perplexity-expert', 'perplexity-academic')
+  }
+  
+  // Always add at least 2 secondary sources for thorough analysis
+  if (secondaryAPIs.length < 2) {
+    secondaryAPIs.push('perplexity-supplementary')
   }
   
   // Step 3: Execute secondary APIs in parallel
@@ -109,21 +123,68 @@ export async function intelligentSearch(
     })
   }
   
-  // Step 4: Deduplicate sources
-  const uniqueSources = deduplicateSources(allSources)
+  // Step 4: Enhanced source processing with credibility assessment
+  const { assessMultipleSources } = await import('./source-credibility')
+  
+  let uniqueSources = deduplicateSources(allSources)
+  
+  // Assess credibility for all unique sources
+  const credibilityAssessments = assessMultipleSources(
+    uniqueSources.map(s => ({
+      url: s.url,
+      title: s.title,
+      publishedDate: s.publishedAt
+    }))
+  )
+  
+  // Enhance sources with credibility data
+  uniqueSources = uniqueSources.map((source, index) => {
+    const assessment = credibilityAssessments[index]
+    return {
+      ...source,
+      credibilityScore: assessment.score,
+      credibilityBadge: assessment.badge,
+      mediaRank: assessment.mediaRank,
+      sourceType: assessment.sourceType
+    }
+  })
+  
+  const highCredibilitySources = uniqueSources.filter(s => (s.credibilityScore || 0) >= 75)
+  const mediaRankSources = uniqueSources.filter(s => s.mediaRank)
+  
   console.log(`[IntelligentRouter] Step 4: Collected ${uniqueSources.length} unique sources from ${Object.keys(apiResults).length} APIs`)
+  console.log(`[IntelligentRouter] Quality metrics: ${highCredibilitySources.length} high-credibility, ${mediaRankSources.length} MediaRank-verified`)
   
-  // Step 5: Final Perplexity Reasoning - Send ALL sources back for final verdict
-  console.log(`[IntelligentRouter] Step 5: Final reasoning with all sources`)
-  const finalVerdict = await queryPerplexityForFinalVerdict(query, uniqueSources, primaryAnalysis)
+  // Step 5: Enhanced final reasoning with credibility weighting
+  console.log(`[IntelligentRouter] Step 5: Final reasoning with ${uniqueSources.length} sources (${highCredibilitySources.length} high-credibility, ${mediaRankSources.length} MediaRank)`)
   
-  const sortedSources = sortSourcesByRelevance(uniqueSources, context)
-  const sourceBreakdown = generateSourceBreakdown(sortedSources)
+  // Use top-quality sources for final reasoning, sorted by credibility
+  const sortedByCredibility = uniqueSources.sort((a, b) => (b.credibilityScore || 0) - (a.credibilityScore || 0))
+  const reasoningSources = sortedByCredibility.slice(0, 30) // Top 30 sources for reasoning
+  
+  const finalVerdict = await queryPerplexityForFinalVerdict(query, reasoningSources, primaryAnalysis)
+  
+  // Boost confidence for MediaRank sources
+  if (finalVerdict && mediaRankSources.length > 0) {
+    const mediaRankBonus = Math.min(0.15, mediaRankSources.length * 0.03)
+    finalVerdict.confidence = Math.min(1.0, finalVerdict.confidence + mediaRankBonus)
+    console.log(`[IntelligentRouter] Confidence boosted by ${(mediaRankBonus * 100).toFixed(1)}% due to ${mediaRankSources.length} MediaRank sources`)
+  }
+  
+  // Sort by credibility score first, then relevance
+  const sortedSources = uniqueSources.sort((a, b) => {
+    const credibilityDiff = (b.credibilityScore || 0) - (a.credibilityScore || 0)
+    if (credibilityDiff !== 0) return credibilityDiff
+    return (b.metadata?.relevance || 0) - (a.metadata?.relevance || 0)
+  })
+  
+  const sourceBreakdown = generateEnhancedSourceBreakdown(sortedSources)
   const totalProcessingTime = Date.now() - startTime
   
   console.log(`[IntelligentRouter] Process complete in ${totalProcessingTime}ms`)
   console.log(`[IntelligentRouter] Final verdict: ${finalVerdict.label} (${Math.round(finalVerdict.confidence * 100)}% confidence)`)
   console.log(`[IntelligentRouter] Source breakdown:`, sourceBreakdown)
+  console.log(`[IntelligentRouter] Enhanced quality: ${sourceBreakdown.authoritative || 0} authoritative, ${sourceBreakdown.credible || 0} credible, ${sourceBreakdown.mediarank_verified || 0} MediaRank verified`)
   
   return {
     sources: sortedSources,
@@ -280,6 +341,48 @@ function generateSourceBreakdown(sources: SourceResult[]): { [type: string]: num
   for (const source of sources) {
     breakdown[source.type] = (breakdown[source.type] || 0) + 1
   }
+  
+  return breakdown
+}
+
+/**
+ * Enhanced source breakdown with credibility metrics
+ */
+function generateEnhancedSourceBreakdown(sources: any[]): { [type: string]: number } {
+  const breakdown: { [type: string]: number } = {
+    'total': sources.length,
+    'high_credibility': 0,
+    'mediarank_verified': 0,
+    'authoritative': 0,
+    'credible': 0,
+    'limited': 0
+  }
+  
+  sources.forEach(source => {
+    // Standard type breakdown
+    const type = source.type || 'general'
+    breakdown[type] = (breakdown[type] || 0) + 1
+    
+    // Credibility categories
+    const credibilityScore = source.credibilityScore || 0
+    if (credibilityScore >= 85) {
+      breakdown['authoritative']++
+    } else if (credibilityScore >= 60) {
+      breakdown['credible']++
+    } else {
+      breakdown['limited']++
+    }
+    
+    // High credibility threshold
+    if (credibilityScore >= 75) {
+      breakdown['high_credibility']++
+    }
+    
+    // MediaRank verification
+    if (source.mediaRank) {
+      breakdown['mediarank_verified']++
+    }
+  })
   
   return breakdown
 }

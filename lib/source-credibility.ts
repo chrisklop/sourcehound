@@ -1,7 +1,7 @@
 // Server-side module for source credibility assessment
 
 import { getMediaRank, type MediaRankEntry } from './mediarank'
-import { detectSourceType, type SourceType } from '@/components/ui/credibility-badge'
+import { detectSourceType, type SourceType } from './source-credibility-server'
 
 /**
  * Comprehensive source credibility scoring system

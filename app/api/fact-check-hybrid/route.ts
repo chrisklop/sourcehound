@@ -34,6 +34,12 @@ interface ConsolidatedResult {
       gemini: 'success' | 'failed' | 'partial'
     }
   }
+  credibilityBreakdown?: {
+    highCredibility: number
+    mediumCredibility: number
+    lowCredibility: number
+    mediaRankSources: number
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -143,11 +149,63 @@ async function performHybridFactCheck(query: string, sessionId: string, slug: st
 async function runPerplexityEngine(query: string, sessionId: string) {
   try {
     console.log("[Hybrid] Starting Perplexity engine...")
+    
+    // Update progress with initial Perplexity status
+    await updateProgress(sessionId, {
+      step: "querying-ai",
+      status: "in-progress",
+      message: "🧠 Perplexity AI conducting comprehensive research...",
+      details: "Analyzing multiple information sources and cross-referencing data",
+      progress: 25,
+      timestamp: Date.now(),
+      currentAPI: "perplexity",
+      engineDetails: {
+        perplexity: { status: "Running comprehensive analysis", sources: 0 }
+      }
+    })
+    
     const result = await intelligentSearch(query)
+    
+    // Update progress with Perplexity results
+    await updateProgress(sessionId, {
+      step: "querying-ai",
+      status: "in-progress",
+      message: "✅ Perplexity research complete - analyzing findings...",
+      details: `Discovered ${result.sources?.length || 0} sources with ${result.sourceBreakdown?.high_credibility || 0} high-credibility sources`,
+      progress: 45,
+      timestamp: Date.now(),
+      sourcesFound: result.sources?.length || 0,
+      engineDetails: {
+        perplexity: { 
+          status: "Analysis complete", 
+          sources: result.sources?.length || 0,
+          processingTime: result.totalProcessingTime
+        }
+      },
+      credibilityAnalysis: {
+        highCredibility: result.sourceBreakdown?.authoritative || 0,
+        mediumCredibility: result.sourceBreakdown?.credible || 0,
+        lowCredibility: result.sourceBreakdown?.limited || 0,
+        mediaRankSources: result.sourceBreakdown?.mediarank_verified || 0
+      }
+    })
+    
     console.log("[Hybrid] Perplexity completed:", result.sources?.length || 0, "sources")
     return { status: 'success', data: result, engine: 'perplexity' }
   } catch (error) {
     console.error("[Hybrid] Perplexity engine failed:", error)
+    
+    await updateProgress(sessionId, {
+      step: "querying-ai",
+      status: "in-progress",
+      message: "❌ Perplexity analysis encountered issues - continuing with available data...",
+      progress: 35,
+      timestamp: Date.now(),
+      engineDetails: {
+        perplexity: { status: "Failed", sources: 0 }
+      }
+    })
+    
     return { status: 'failed', error, engine: 'perplexity' }
   }
 }
@@ -156,12 +214,37 @@ async function runGeminiEngine(query: string, sessionId: string) {
   try {
     console.log("[Hybrid] Starting Gemini engine...")
     
+    // Update progress with initial Gemini status
+    await updateProgress(sessionId, {
+      step: "querying-ai",
+      status: "in-progress",
+      message: "🤖 Gemini AI performing independent verification...",
+      details: "Cross-referencing claims with authoritative sources and fact-checking databases",
+      progress: 30,
+      timestamp: Date.now(),
+      currentAPI: "gemini",
+      engineDetails: {
+        gemini: { status: "Initializing verification process", sources: 0 }
+      }
+    })
+    
     // Check if API key is available
     if (!process.env.GEMINI_API_KEY) {
       throw new Error("GEMINI_API_KEY environment variable not found")
     }
     
     console.log("[Hybrid] Gemini API key found, initializing model...")
+    
+    await updateProgress(sessionId, {
+      step: "querying-ai",
+      status: "in-progress",
+      message: "⚡ Gemini Pro model activated - processing claim...",
+      progress: 35,
+      timestamp: Date.now(),
+      engineDetails: {
+        gemini: { status: "Processing verification request", sources: 0 }
+      }
+    })
     
     // Simplified Gemini model without function calling for better compatibility
     const geminiPro = genAI.getGenerativeModel({
@@ -199,14 +282,54 @@ async function runGeminiEngine(query: string, sessionId: string) {
       systemInstruction: systemPrompt 
     })
     
+    await updateProgress(sessionId, {
+      step: "querying-ai",
+      status: "in-progress",
+      message: "🔍 Gemini analyzing claim structure and searching for evidence...",
+      progress: 50,
+      timestamp: Date.now(),
+      engineDetails: {
+        gemini: { status: "Analyzing and fact-checking", sources: 0 }
+      }
+    })
+    
     const result = await chat.generateContent(`Fact-check this claim: "${query}"`)
     const jsonText = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim()
     const parsedResult = JSON.parse(jsonText)
+    
+    await updateProgress(sessionId, {
+      step: "querying-ai",
+      status: "in-progress",
+      message: "✅ Gemini verification complete - cross-referencing findings...",
+      details: `Gemini found ${parsedResult.sources?.length || 0} verification sources`,
+      progress: 60,
+      timestamp: Date.now(),
+      sourcesFound: (parsedResult.sources?.length || 0),
+      engineDetails: {
+        gemini: { 
+          status: "Verification complete", 
+          sources: parsedResult.sources?.length || 0 
+        }
+      }
+    })
     
     console.log("[Hybrid] Gemini completed:", parsedResult.sources?.length || 0, "sources")
     return { status: 'success', data: parsedResult, engine: 'gemini' }
   } catch (error) {
     console.error("[Hybrid] Gemini engine failed:", error)
+    
+    await updateProgress(sessionId, {
+      step: "querying-ai",
+      status: "in-progress",
+      message: "⚠️ Gemini verification unavailable - proceeding with Perplexity analysis...",
+      details: error instanceof Error ? `Gemini error: ${error.message}` : "Gemini service temporarily unavailable",
+      progress: 55,
+      timestamp: Date.now(),
+      engineDetails: {
+        gemini: { status: "Failed", sources: 0 }
+      }
+    })
+    
     return { status: 'failed', error, engine: 'gemini' }
   }
 }
@@ -321,7 +444,7 @@ function consolidateEngineResults(perplexityResult: any, geminiResult: any, quer
 
   consolidatedResult.sources = Array.from(urlMap.values())
     .map((source, index) => ({ ...source, rank: index + 1 }))
-    .slice(0, 30) // Limit to top 30
+    .slice(0, 50) // Increased to top 50 for comprehensive analysis
 
   // Consolidate key findings
   const allKeyFindings = []
