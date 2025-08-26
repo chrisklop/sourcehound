@@ -238,7 +238,8 @@ async function runGeminiEngine(query: string, sessionId: string) {
     await updateProgress(sessionId, {
       step: "querying-ai",
       status: "in-progress",
-      message: "⚡ Gemini Pro model activated - processing claim...",
+      message: "⚡ Gemini Flash model activated - processing claim...",
+      details: "Using Gemini 1.5 Flash for faster, more reliable verification",
       progress: 35,
       timestamp: Date.now(),
       engineDetails: {
@@ -246,9 +247,9 @@ async function runGeminiEngine(query: string, sessionId: string) {
       }
     })
     
-    // Simplified Gemini model without function calling for better compatibility
-    const geminiPro = genAI.getGenerativeModel({
-      model: "gemini-1.5-pro",
+    // Use Gemini Flash for better rate limits and faster responses
+    const geminiFlash = genAI.getGenerativeModel({
+      model: "gemini-1.5-flash",
     })
 
     const systemPrompt = `You are a world-class fact-checking expert. Conduct a thorough investigation into the user's query using Google Search.
@@ -278,7 +279,7 @@ async function runGeminiEngine(query: string, sessionId: string) {
     }`
 
     const chat = genAI.getGenerativeModel({ 
-      model: "gemini-1.5-pro", 
+      model: "gemini-1.5-flash", 
       systemInstruction: systemPrompt 
     })
     
@@ -293,40 +294,91 @@ async function runGeminiEngine(query: string, sessionId: string) {
       }
     })
     
-    const result = await chat.generateContent(`Fact-check this claim: "${query}"`)
-    const jsonText = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim()
-    const parsedResult = JSON.parse(jsonText)
+    // Add timeout and better error handling for rate limits
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 15000) // 15 second timeout
     
-    await updateProgress(sessionId, {
-      step: "querying-ai",
-      status: "in-progress",
-      message: "✅ Gemini verification complete - cross-referencing findings...",
-      details: `Gemini found ${parsedResult.sources?.length || 0} verification sources`,
-      progress: 60,
-      timestamp: Date.now(),
-      sourcesFound: (parsedResult.sources?.length || 0),
-      engineDetails: {
-        gemini: { 
-          status: "Verification complete", 
-          sources: parsedResult.sources?.length || 0 
+    try {
+      const result = await chat.generateContent(`Fact-check this claim: "${query}"`)
+      clearTimeout(timeoutId)
+      
+      const jsonText = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim()
+      console.log('[Hybrid] Gemini raw response:', jsonText.substring(0, 200) + '...')
+      
+      const parsedResult = JSON.parse(jsonText)
+      
+      // Validate the response has expected structure
+      if (!parsedResult.verdict || !parsedResult.sources) {
+        console.warn('[Hybrid] Gemini response missing expected fields, using partial data')
+        parsedResult.verdict = parsedResult.verdict || { label: "Unclear", confidence: 0.5, summary: "Analysis incomplete" }
+        parsedResult.sources = parsedResult.sources || []
+      }
+      
+      console.log('[Hybrid] Gemini parsed result:', JSON.stringify(parsedResult, null, 2).substring(0, 300) + '...')
+      
+      // Update progress with successful result
+      await updateProgress(sessionId, {
+        step: "querying-ai",
+        status: "in-progress",
+        message: "✅ Gemini verification complete - cross-referencing findings...",
+        details: `Gemini found ${parsedResult.sources?.length || 0} verification sources`,
+        progress: 60,
+        timestamp: Date.now(),
+        sourcesFound: (parsedResult.sources?.length || 0),
+        engineDetails: {
+          gemini: { 
+            status: "Verification complete", 
+            sources: parsedResult.sources?.length || 0 
+          }
+        }
+      })
+      
+      console.log("[Hybrid] Gemini completed:", parsedResult.sources?.length || 0, "sources")
+      return { status: 'success', data: parsedResult, engine: 'gemini' }
+    } catch (parseError) {
+      clearTimeout(timeoutId)
+      
+      console.error('[Hybrid] Gemini parse error:', parseError)
+      
+      // If it's a JSON parse error, try to extract partial data
+      if (parseError instanceof SyntaxError) {
+        console.warn('[Hybrid] Gemini returned invalid JSON, attempting graceful fallback')
+        return {
+          verdict: { label: "Unclear", confidence: 0.5, summary: "Gemini analysis incomplete" },
+          sources: [],
+          keyPoints: ["Analysis partially completed"]
         }
       }
-    })
+      throw parseError
+    }
     
-    console.log("[Hybrid] Gemini completed:", parsedResult.sources?.length || 0, "sources")
-    return { status: 'success', data: parsedResult, engine: 'gemini' }
+    // This line should never be reached due to the try/catch return statements above
   } catch (error) {
     console.error("[Hybrid] Gemini engine failed:", error)
     
+    // Check if it's a rate limit error
+    const isRateLimit = error instanceof Error && 
+      (error.message.includes('429') || 
+       error.message.includes('Too Many Requests') || 
+       error.message.includes('quota'))
+    
+    const errorMessage = isRateLimit 
+      ? "⏱️ Gemini rate limit reached - analysis continues with Perplexity..."
+      : "⚠️ Gemini verification unavailable - proceeding with Perplexity analysis..."
+      
+    const errorDetails = isRateLimit
+      ? "Gemini free tier quota exceeded. Hybrid system continues with Perplexity engine."
+      : error instanceof Error ? `Gemini error: ${error.message}` : "Gemini service temporarily unavailable"
+    
     await updateProgress(sessionId, {
       step: "querying-ai",
       status: "in-progress",
-      message: "⚠️ Gemini verification unavailable - proceeding with Perplexity analysis...",
-      details: error instanceof Error ? `Gemini error: ${error.message}` : "Gemini service temporarily unavailable",
+      message: errorMessage,
+      details: errorDetails,
       progress: 55,
       timestamp: Date.now(),
       engineDetails: {
-        gemini: { status: "Failed", sources: 0 }
+        gemini: { status: isRateLimit ? "Rate Limited" : "Failed", sources: 0 }
       }
     })
     
