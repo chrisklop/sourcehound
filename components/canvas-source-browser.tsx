@@ -44,7 +44,7 @@ export function CanvasSourceBrowser({
   onSourceSelect,
   className 
 }: CanvasSourceBrowserProps) {
-  const [viewMode, setViewMode] = useState<ViewMode>('canvas')
+  const [viewMode, setViewMode] = useState<ViewMode>('grid')
   const [searchQuery, setSearchQuery] = useState('')
   const [filterType, setFilterType] = useState<FilterType>('all')
   const [selectedSource, setSelectedSource] = useState<EnhancedSource | null>(null)
@@ -248,7 +248,7 @@ export function CanvasSourceBrowser({
   )
 
   const renderGridView = () => (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 pb-4">
       {filteredSources.map((source, index) => (
         <EnhancedSourceCard
           key={`${source.url}-${index}`}
@@ -256,6 +256,7 @@ export function CanvasSourceBrowser({
           size="default"
           onClick={() => handleSourceClick(source)}
           className={cn(
+            "h-fit",
             selectedSource?.url === source.url && "ring-2 ring-primary"
           )}
         />
@@ -264,7 +265,7 @@ export function CanvasSourceBrowser({
   )
 
   const renderListView = () => (
-    <div className="space-y-3">
+    <div className="space-y-3 pb-4">
       {filteredSources.map((source, index) => (
         <EnhancedSourceCard
           key={`${source.url}-${index}`}
@@ -272,7 +273,7 @@ export function CanvasSourceBrowser({
           size="compact"
           onClick={() => handleSourceClick(source)}
           className={cn(
-            "hover:shadow-md transition-shadow",
+            "hover:shadow-md transition-shadow w-full",
             selectedSource?.url === source.url && "ring-2 ring-primary"
           )}
         />
@@ -376,22 +377,22 @@ export function CanvasSourceBrowser({
       </CardHeader>
 
       <CardContent className="flex-1 p-0 overflow-hidden">
-        <div className="flex gap-6 h-full">
+        <div className="flex gap-0 h-full">
           {/* Main View */}
-          <div className="flex-1">
-            <ScrollArea className="h-full p-4">
+          <div className="flex-1 overflow-hidden">
+            <div className="h-full overflow-y-auto p-4">
               {viewMode === 'canvas' && renderCanvasView()}
               {viewMode === 'grid' && renderGridView()}
               {viewMode === 'list' && renderListView()}
-            </ScrollArea>
+            </div>
           </div>
 
           {/* Side Panel */}
-          <div className="w-80 border-l bg-muted/30">
-            <ScrollArea className="h-full">
-              <div className="p-4 h-full flex flex-col">
+          <div className="w-80 border-l bg-muted/30 overflow-hidden">
+            <div className="h-full overflow-y-auto">
+              <div className="p-4">
                 {selectedSource ? (
-                  <div className="space-y-4 flex-1">
+                  <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <h3 className="font-medium text-sm">Source Details</h3>
                       <Button
@@ -404,14 +405,12 @@ export function CanvasSourceBrowser({
                       </Button>
                     </div>
                     
-                    <div className="flex-1">
-                      <EnhancedSourceCard
-                        source={selectedSource}
-                        size="detailed"
-                        showFullDetails
-                        className="border-0 shadow-none"
-                      />
-                    </div>
+                    <EnhancedSourceCard
+                      source={selectedSource}
+                      size="detailed"
+                      showFullDetails
+                      className="border-0 shadow-none"
+                    />
                   </div>
                 ) : (
                   <div className="space-y-4">
@@ -431,7 +430,7 @@ export function CanvasSourceBrowser({
                   </div>
                 )}
               </div>
-            </ScrollArea>
+            </div>
           </div>
         </div>
       </CardContent>

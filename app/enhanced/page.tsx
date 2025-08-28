@@ -482,16 +482,16 @@ export default function EnhancedSourceHoundPage() {
         sidebarOpen ? "w-80" : "w-0"
       )}>
         <div className={cn(
-          "h-full bg-muted/50 border-r backdrop-blur-md overflow-hidden",
+          "h-full bg-muted/50 border-r backdrop-blur-md",
           sidebarOpen ? "opacity-100" : "opacity-0"
         )}>
-          <div className="flex h-full flex-col">
-            <div className="flex items-center justify-between p-4 border-b">
+          <div className="flex h-full flex-col overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b flex-shrink-0">
               <h1 className="text-xl font-bold">SourceHound</h1>
               <Badge variant="secondary" className="text-xs">Enhanced</Badge>
             </div>
 
-            <div className="p-4">
+            <div className="p-4 flex-shrink-0">
               <Button
                 onClick={createNewConversation}
                 className="w-full justify-start"
@@ -503,7 +503,7 @@ export default function EnhancedSourceHoundPage() {
             </div>
 
             {/* View Mode Tabs */}
-            <div className="px-4 pb-2">
+            <div className="px-4 pb-2 flex-shrink-0">
               <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as ViewMode)} className="w-full">
                 <TabsList className="grid grid-cols-4 w-full h-8 p-0">
                   <TabsTrigger value="chat" className="text-xs px-1">
@@ -522,8 +522,8 @@ export default function EnhancedSourceHoundPage() {
               </Tabs>
             </div>
 
-            <ScrollArea className="flex-1 px-2">
-              <div className="space-y-1">
+            <div className="flex-1 overflow-y-auto px-2">
+              <div className="space-y-1 py-2">
                 {conversations.filter(c => !c.isArchived).map((conversation) => (
                   <Button
                     key={conversation.id}
@@ -545,7 +545,7 @@ export default function EnhancedSourceHoundPage() {
                   </Button>
                 ))}
               </div>
-            </ScrollArea>
+            </div>
           </div>
         </div>
       </aside>
