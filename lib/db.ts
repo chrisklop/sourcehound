@@ -23,7 +23,6 @@ export const redis = globalThis.redis ?? new Redis(
     lazyConnect: true,
     connectTimeout: 10000,
     commandTimeout: 10000,
-    retryDelayOnFailover: 100,
     enableAutoPipelining: true,
   }
 )

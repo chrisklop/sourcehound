@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { sessionManager } from '@/lib/session-manager'
+import { applyRateLimit, RATE_LIMIT_TIERS } from '@/lib/rate-limiter'
 
 // Legacy file-based fallback for migration
 import fs from 'fs/promises'
@@ -170,6 +171,29 @@ async function handleLegacyDelete(request: NextRequest) {
 // GET /api/sessions - Load conversations for current IP
 export async function GET(request: NextRequest) {
   try {
+    // Apply generous rate limiting for session access (200 per hour)
+    const sessionRateLimit = {
+      windowSizeMs: 60 * 60 * 1000, // 1 hour
+      maxRequests: 200, // 200 requests per hour 
+      keyPrefix: 'rate_limit:sessions',
+      burstAllowance: 20
+    }
+    
+    const { allowed, headers } = await applyRateLimit(request, sessionRateLimit)
+    
+    if (!allowed) {
+      return NextResponse.json({
+        error: "Too many session requests",
+        message: "Rate limit exceeded for session access. Please wait before trying again."
+      }, { 
+        status: 429,
+        headers: {
+          ...headers,
+          'Content-Type': 'application/json'
+        }
+      })
+    }
+
     // If no database configured, fall back to legacy file system
     if (!process.env.DATABASE_URL) {
       return handleLegacyGet(request)
@@ -181,10 +205,17 @@ export async function GET(request: NextRequest) {
     // Load session using new database system
     const { data } = await sessionManager.getSession(request)
     
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       conversations: data.conversations
     })
+    
+    // Add rate limit headers
+    Object.entries(headers).forEach(([key, value]) => {
+      response.headers.set(key, value)
+    })
+    
+    return response
   } catch (error) {
     console.error('Error loading session:', error)
     
@@ -197,6 +228,29 @@ export async function GET(request: NextRequest) {
 // POST /api/sessions - Save conversations for current IP  
 export async function POST(request: NextRequest) {
   try {
+    // Apply rate limiting for session saves (100 per hour)
+    const sessionSaveRateLimit = {
+      windowSizeMs: 60 * 60 * 1000, // 1 hour
+      maxRequests: 100, // 100 saves per hour
+      keyPrefix: 'rate_limit:session_saves',
+      burstAllowance: 10
+    }
+    
+    const { allowed, headers } = await applyRateLimit(request, sessionSaveRateLimit)
+    
+    if (!allowed) {
+      return NextResponse.json({
+        error: "Too many session save requests",
+        message: "Rate limit exceeded for session saves. Please wait before trying again."
+      }, { 
+        status: 429,
+        headers: {
+          ...headers,
+          'Content-Type': 'application/json'
+        }
+      })
+    }
+
     // If no database configured, fall back to legacy file system
     if (!process.env.DATABASE_URL) {
       return handleLegacyPost(request)
@@ -222,10 +276,17 @@ export async function POST(request: NextRequest) {
     })
     
     if (success) {
-      return NextResponse.json({
+      const response = NextResponse.json({
         success: true,
         message: 'Session saved successfully'
       })
+      
+      // Add rate limit headers
+      Object.entries(headers).forEach(([key, value]) => {
+        response.headers.set(key, value)
+      })
+      
+      return response
     } else {
       throw new Error('Failed to save session')
     }

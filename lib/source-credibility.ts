@@ -225,7 +225,7 @@ function generateReasoning(score: number, sourceType: SourceType, factors: Credi
     case 'news':
       reasoning += 'News sources vary in credibility based on editorial standards, fact-checking practices, and historical accuracy.'
       break
-    case 'general':
+    case 'other':
       reasoning += 'General web sources require careful evaluation as they may not follow professional editorial standards.'
       break
   }
@@ -251,7 +251,7 @@ function calculateConfidence(sourceType: SourceType, factors: CredibilityFactor[
     case 'news':
       confidence += mediaRank ? 20 : 10
       break
-    case 'general':
+    case 'other':
       confidence += 5
       break
   }

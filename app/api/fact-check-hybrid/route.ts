@@ -4,6 +4,9 @@ import { generateSlug } from "@/lib/database"
 import { logQuery } from "@/lib/query-logger"
 import { intelligentSearch } from "@/lib/intelligent-router"
 import { GoogleGenerativeAI, SchemaType, FunctionCallingMode } from "@google/generative-ai"
+import { applyRateLimit, RATE_LIMIT_TIERS, rateLimiter } from "@/lib/rate-limiter"
+import { authManager } from "@/lib/auth"
+import { webhookManager } from "@/lib/webhook-manager"
 
 // Initialize Gemini AI Client
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "")
@@ -44,6 +47,8 @@ interface ConsolidatedResult {
 
 export async function POST(request: NextRequest) {
   let query: string | null = null
+  let rateLimitResult: any = null
+  let authenticatedUser: any = null
   
   try {
     const body = await request.json()
@@ -57,10 +62,120 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Query is required" }, { status: 400 })
     }
 
-    const slug = generateSlug(query)
-    const result = await performHybridFactCheck(query, sessionId, slug)
+    // Check for authentication
+    const authSession = await authManager.getSessionFromRequest(request)
+    if (authSession) {
+      authenticatedUser = await authManager.getUserById(authSession.userId)
+      console.log(`[Hybrid] Authenticated user: ${authenticatedUser?.username} (${authenticatedUser?.tier})`)
+    }
 
-    return NextResponse.json({ ...result, slug, cached: false })
+    // Determine rate limiting based on authentication
+    let rateLimitConfig
+    let rateLimitIdentifier
+
+    if (authenticatedUser) {
+      // Authenticated user - use tier-based rate limiting
+      rateLimitConfig = authenticatedUser.tier === 'premium' ? RATE_LIMIT_TIERS.PREMIUM :
+                       authenticatedUser.tier === 'enterprise' ? RATE_LIMIT_TIERS.ENTERPRISE :
+                       RATE_LIMIT_TIERS.FREE
+      rateLimitIdentifier = `user:${authenticatedUser.id}`
+    } else {
+      // Anonymous user - use IP-based rate limiting
+      rateLimitConfig = RATE_LIMIT_TIERS.IP_LIMIT
+      const forwarded = request.headers.get('x-forwarded-for')
+      const realIP = request.headers.get('x-real-ip')
+      const cfIP = request.headers.get('cf-connecting-ip')
+      rateLimitIdentifier = forwarded?.split(',')[0].trim() || realIP || cfIP || 'unknown'
+    }
+    
+    const { allowed, headers, result } = await applyRateLimit(request, rateLimitConfig, rateLimitIdentifier)
+    rateLimitResult = result
+    
+    if (!allowed) {
+      console.log(`[Hybrid] Rate limit exceeded for ${result.rateLimitType}:`, result)
+      return NextResponse.json({
+        error: "Rate limit exceeded",
+        message: `Too many requests. Limit: ${result.limit} requests per hour. Try again in ${Math.ceil((result.retryAfter || 0) / 60)} minutes.`,
+        rateLimitInfo: {
+          limit: result.limit,
+          remaining: result.remaining,
+          resetTime: new Date(result.resetTime).toISOString(),
+          retryAfter: result.retryAfter,
+          tier: result.rateLimitType
+        }
+      }, { 
+        status: 429,
+        headers: {
+          ...headers,
+          'Content-Type': 'application/json'
+        }
+      })
+    }
+
+    const slug = generateSlug(query)
+    const startTime = Date.now()
+    const factCheckResult = await performHybridFactCheck(query, sessionId, slug)
+    const processingTime = Date.now() - startTime
+
+    // Get IP for analytics logging
+    const forwarded = request.headers.get('x-forwarded-for')
+    const realIP = request.headers.get('x-real-ip')
+    const cfIP = request.headers.get('cf-connecting-ip')
+    const identifier = forwarded?.split(',')[0].trim() || realIP || cfIP || 'unknown'
+
+    // Log analytics data
+    await rateLimiter.checkRateLimit(
+      identifier,
+      rateLimitConfig,
+      {
+        query,
+        cached: false,
+        processingTime
+      }
+    )
+
+    const response = NextResponse.json({ 
+      ...factCheckResult, 
+      slug, 
+      cached: false,
+      rateLimitInfo: {
+        remaining: rateLimitResult.remaining,
+        resetTime: new Date(rateLimitResult.resetTime).toISOString(),
+        tier: rateLimitResult.rateLimitType
+      },
+      user: authenticatedUser ? {
+        id: authenticatedUser.id,
+        username: authenticatedUser.username,
+        tier: authenticatedUser.tier,
+        role: authenticatedUser.role
+      } : null
+    })
+    
+    // Add rate limit headers
+    Object.entries(headers).forEach(([key, value]) => {
+      response.headers.set(key, value)
+    })
+    
+    // Trigger webhook event for fact-check completion
+    if (authenticatedUser) {
+      try {
+        await webhookManager.triggerEvent('fact_check.completed', {
+          query,
+          verdict: factCheckResult.verdict,
+          keyFindings: factCheckResult.keyFindings,
+          sources: factCheckResult.sources,
+          processingTime,
+          slug,
+          engineResults: factCheckResult.engineResults,
+          credibilityBreakdown: factCheckResult.credibilityBreakdown
+        }, authenticatedUser)
+      } catch (webhookError) {
+        console.error('[Webhook] Failed to trigger fact-check completion event:', webhookError)
+        // Don't fail the main request if webhook fails
+      }
+    }
+    
+    return response
   } catch (error) {
     console.error("[Hybrid] POST Error:", error)
     if (query) {
@@ -68,6 +183,38 @@ export async function POST(request: NextRequest) {
         errorType: 'hybrid_api_error', 
         method: 'POST' 
       })
+      
+      // Log error in rate limiter for analytics
+      if (rateLimitResult) {
+        // Get IP for error logging
+        const forwarded = request.headers.get('x-forwarded-for')
+        const realIP = request.headers.get('x-real-ip')
+        const cfIP = request.headers.get('cf-connecting-ip')
+        const identifier = forwarded?.split(',')[0].trim() || realIP || cfIP || 'unknown'
+        
+        await rateLimiter.checkRateLimit(
+          identifier,
+          RATE_LIMIT_TIERS.IP_LIMIT,
+          {
+            query,
+            cached: false,
+            processingTime: 0
+          }
+        )
+      }
+
+      // Trigger webhook event for fact-check failure
+      if (authenticatedUser) {
+        try {
+          await webhookManager.triggerEvent('fact_check.failed', {
+            query,
+            error: error instanceof Error ? error.message : 'Unknown error',
+            timestamp: Date.now()
+          }, authenticatedUser)
+        } catch (webhookError) {
+          console.error('[Webhook] Failed to trigger fact-check failure event:', webhookError)
+        }
+      }
     }
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }

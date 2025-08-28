@@ -3,7 +3,8 @@
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { CredibilityBadge, detectSourceType, type SourceType } from "@/components/ui/credibility-badge"
+import { CredibilityBadge, type SourceType } from "@/components/ui/credibility-badge"
+import { detectSourceType } from "@/lib/source-credibility-server"
 import { ExternalLink, Calendar, User, Quote, TrendingUp } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useState } from "react"
@@ -45,7 +46,8 @@ export function EnhancedSourceCard({
   const [isExpanded, setIsExpanded] = useState(source.isExpanded || false)
   
   // Auto-detect source type if not provided
-  const sourceType = source.sourceType || detectSourceType(source.url, source.title)
+  const detected = detectSourceType(source.url, source.title)
+  const sourceType = source.sourceType || (detected === 'other' ? 'general' : detected as SourceType)
   
   // Handle expand/collapse
   const handleExpand = () => {

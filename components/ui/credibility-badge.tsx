@@ -3,6 +3,7 @@
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import { assessSourceCredibility } from "@/lib/source-credibility"
+import { detectSourceType } from "@/lib/source-credibility-server"
 
 // Source type definitions with icons and styling
 export const SOURCE_TYPES = {
@@ -87,11 +88,12 @@ export function CredibilityBadge({
 
   if (useAdvancedScoring && sourceUrl) {
     const assessment = assessSourceCredibility(sourceUrl, sourceTitle, publishedDate)
-    finalSourceType = assessment.sourceType
+    finalSourceType = assessment.sourceType === 'other' ? 'general' : assessment.sourceType as SourceType
     score = assessment.score
   } else if (!finalSourceType && sourceUrl) {
     // Fallback to basic detection if no source type provided
-    finalSourceType = detectSourceType(sourceUrl, sourceTitle)
+    const detected = detectSourceType(sourceUrl, sourceTitle)
+    finalSourceType = detected === 'other' ? 'general' : detected as SourceType
   }
 
   // Default to 'general' if still no source type
@@ -161,54 +163,6 @@ export function CredibilityBadge({
   )
 }
 
-// Utility function to determine source type from URL or domain
-export function detectSourceType(url: string, title?: string): SourceType {
-  const domain = new URL(url).hostname.toLowerCase()
-  
-  // Government domains
-  if (domain.includes('.gov') || 
-      domain.includes('epa.') ||
-      domain.includes('cdc.') ||
-      domain.includes('who.int') ||
-      domain.includes('europa.eu')) {
-    return 'government'
-  }
-  
-  // Academic domains  
-  if (domain.includes('.edu') ||
-      domain.includes('scholar.') ||
-      domain.includes('academic') ||
-      domain.includes('university') ||
-      domain.includes('pubmed') ||
-      domain.includes('arxiv') ||
-      domain.includes('jstor')) {
-    return 'academic'
-  }
-  
-  // Fact-checking sites
-  if (domain.includes('snopes') ||
-      domain.includes('factcheck') ||
-      domain.includes('politifact') ||
-      domain.includes('fullfact') ||
-      domain.includes('afp.com')) {
-    return 'factcheck'
-  }
-  
-  // News sites (partial list - could be expanded)
-  if (domain.includes('reuters') ||
-      domain.includes('ap.org') ||
-      domain.includes('bbc') ||
-      domain.includes('cnn') ||
-      domain.includes('nytimes') ||
-      domain.includes('washingtonpost') ||
-      domain.includes('guardian') ||
-      domain.includes('wsj')) {
-    return 'news'
-  }
-  
-  // Default to general web source
-  return 'general'
-}
 
 // Export utility for testing
 export { generateStars, getCredibilityLevel }

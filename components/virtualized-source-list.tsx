@@ -7,7 +7,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { EnhancedSourceCard } from '@/components/enhanced-source-card'
-import { CredibilityBadge, detectSourceType } from '@/components/ui/credibility-badge'
+import { CredibilityBadge } from '@/components/ui/credibility-badge'
+import { detectSourceType } from '@/lib/source-credibility-server'
 import { 
   Search, 
   Filter,
@@ -95,7 +96,10 @@ const VirtualizedSourceItem = ({
                     #{source.rank || index + 1}
                   </Badge>
                   <CredibilityBadge
-                    sourceType={detectSourceType(source.url, source.title)}
+                    sourceType={(() => {
+                      const detected = detectSourceType(source.url, source.title)
+                      return detected === 'other' ? 'general' : detected as any
+                    })()}
                     credibilityScore={source.credibilityScore}
                     showScore={true}
                     showStars={false}

@@ -150,7 +150,7 @@ export async function intelligentSearch(
   })
   
   const highCredibilitySources = uniqueSources.filter(s => (s.credibilityScore || 0) >= 75)
-  const mediaRankSources = uniqueSources.filter(s => s.mediaRank)
+  const mediaRankSources = uniqueSources.filter(s => (s as any).mediaRank)
   
   console.log(`[IntelligentRouter] Step 4: Collected ${uniqueSources.length} unique sources from ${Object.keys(apiResults).length} APIs`)
   console.log(`[IntelligentRouter] Quality metrics: ${highCredibilitySources.length} high-credibility, ${mediaRankSources.length} MediaRank-verified`)
