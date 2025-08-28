@@ -524,7 +524,7 @@ export default function EnhancedSourceHoundPage() {
 
             <ScrollArea className="flex-1 px-2">
               <div className="space-y-1">
-                {conversations.filter(c => !c.isArchived).slice(0, 10).map((conversation) => (
+                {conversations.filter(c => !c.isArchived).map((conversation) => (
                   <Button
                     key={conversation.id}
                     variant={activeConversation === conversation.id ? "secondary" : "ghost"}
@@ -605,13 +605,16 @@ export default function EnhancedSourceHoundPage() {
           )}
           
           {viewMode === 'sources' && (
-            <div className="p-6 h-full">
+            <div className="h-full overflow-hidden">
               {allSources.length > 0 ? (
-                <CanvasSourceBrowser
-                  sources={allSources}
-                  isExpanded={sourceBrowserExpanded}
-                  onExpand={setSourceBrowserExpanded}
-                />
+                <div className="h-full p-6">
+                  <CanvasSourceBrowser
+                    sources={allSources}
+                    isExpanded={sourceBrowserExpanded}
+                    onExpand={setSourceBrowserExpanded}
+                    className="h-full"
+                  />
+                </div>
               ) : (
                 <div className="text-center py-12">
                   <BookOpen className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />

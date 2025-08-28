@@ -281,8 +281,8 @@ export function CanvasSourceBrowser({
   )
 
   return (
-    <Card className={cn("flex flex-col", className)}>
-      <CardHeader className="pb-3">
+    <Card className={cn("flex flex-col h-full", className)}>
+      <CardHeader className="pb-3 flex-shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <BookOpen className="w-5 h-5 text-primary" />
@@ -375,11 +375,8 @@ export function CanvasSourceBrowser({
         </div>
       </CardHeader>
 
-      <CardContent className="flex-1 p-0">
-        <div className={cn(
-          "flex gap-6",
-          isExpanded ? "h-[800px]" : "h-[500px]"
-        )}>
+      <CardContent className="flex-1 p-0 overflow-hidden">
+        <div className="flex gap-6 h-full">
           {/* Main View */}
           <div className="flex-1">
             <ScrollArea className="h-full p-4">
@@ -391,48 +388,50 @@ export function CanvasSourceBrowser({
 
           {/* Side Panel */}
           <div className="w-80 border-l bg-muted/30">
-            <div className="p-4 h-full flex flex-col">
-              {selectedSource ? (
-                <div className="space-y-4 flex-1">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-medium text-sm">Source Details</h3>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setSelectedSource(null)}
-                      className="h-6 w-6 p-0"
-                    >
-                      ×
-                    </Button>
+            <ScrollArea className="h-full">
+              <div className="p-4 h-full flex flex-col">
+                {selectedSource ? (
+                  <div className="space-y-4 flex-1">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-medium text-sm">Source Details</h3>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setSelectedSource(null)}
+                        className="h-6 w-6 p-0"
+                      >
+                        ×
+                      </Button>
+                    </div>
+                    
+                    <div className="flex-1">
+                      <EnhancedSourceCard
+                        source={selectedSource}
+                        size="detailed"
+                        showFullDetails
+                        className="border-0 shadow-none"
+                      />
+                    </div>
                   </div>
-                  
-                  <ScrollArea className="flex-1">
-                    <EnhancedSourceCard
-                      source={selectedSource}
-                      size="detailed"
-                      showFullDetails
+                ) : (
+                  <div className="space-y-4">
+                    <h3 className="font-medium text-sm">Analytics</h3>
+                    <InteractiveCharts 
+                      data={{ 
+                        sources: filteredSources.map(s => ({
+                          type: s.sourceType || 'general',
+                          credibilityScore: s.credibilityScore || 75,
+                          publishedDate: s.publishedDate,
+                          url: s.url,
+                          title: s.title
+                        }))
+                      }}
                       className="border-0 shadow-none"
                     />
-                  </ScrollArea>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <h3 className="font-medium text-sm">Analytics</h3>
-                  <InteractiveCharts 
-                    data={{ 
-                      sources: filteredSources.map(s => ({
-                        type: s.sourceType || 'general',
-                        credibilityScore: s.credibilityScore || 75,
-                        publishedDate: s.publishedDate,
-                        url: s.url,
-                        title: s.title
-                      }))
-                    }}
-                    className="border-0 shadow-none"
-                  />
-                </div>
-              )}
-            </div>
+                  </div>
+                )}
+              </div>
+            </ScrollArea>
           </div>
         </div>
       </CardContent>
